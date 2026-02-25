@@ -15,8 +15,7 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
-DBAMP_DB = Path.home() / "Developer" / "dbamp.amphoraxe.ca" / "data" / "vc_dataroom.db"
-VC_DB = Path.home() / "Developer" / "vc_dataroom_main" / "data" / "vc_dataroom.db"
+SOURCE_DB = Path.home() / "Developer" / "dev-dbamp.amphoraxe.ca" / "data" / "vc_dataroom.db"
 AUTH_DB = Path(__file__).resolve().parent / "data" / "auth.db"
 
 DRY_RUN = "--dry-run" in sys.argv
@@ -81,52 +80,27 @@ def read_feature_permissions(db_path: Path) -> list:
 def migrate():
     print("=" * 60)
     print("Amphoraxe Auth - User Migration")
+    print(f"Source: {SOURCE_DB}")
     print("=" * 60)
     if DRY_RUN:
         print("** DRY RUN - no changes will be made **\n")
 
     # Read source data
-    print("Reading dbAMP users...")
-    dbamp_users = read_users(DBAMP_DB)
-    print(f"  Found {len(dbamp_users)} users")
+    print("Reading users...")
+    source_users = read_users(SOURCE_DB)
+    print(f"  Found {len(source_users)} users")
 
-    print("Reading VC DataRoom users...")
-    vc_users = read_users(VC_DB)
-    print(f"  Found {len(vc_users)} users")
+    print("Reading groups...")
+    source_groups = read_groups(SOURCE_DB)
+    print(f"  Found {len(source_groups)} groups")
 
-    # Deduplicate by email - keep most recent (by last_login or created_at)
-    merged = {}
-    source_map = {}  # email -> set of source app slugs
+    print("Reading group memberships...")
+    source_memberships = read_user_groups(SOURCE_DB)
+    print(f"  Found {len(source_memberships)} memberships")
 
-    for user in dbamp_users:
-        email = user["email"].lower().strip()
-        source_map.setdefault(email, set()).add("dbamp")
-        if email not in merged or (user.get("last_login") or "") > (merged[email].get("last_login") or ""):
-            merged[email] = user
-
-    for user in vc_users:
-        email = user["email"].lower().strip()
-        source_map.setdefault(email, set()).add("vc_dataroom")
-        if email not in merged or (user.get("last_login") or "") > (merged[email].get("last_login") or ""):
-            merged[email] = user
-
-    print(f"\nDeduplicated to {len(merged)} unique users")
-
-    # Read groups from both sources
-    print("\nReading groups...")
-    dbamp_groups = read_groups(DBAMP_DB)
-    vc_groups = read_groups(VC_DB)
-    print(f"  dbAMP: {len(dbamp_groups)} groups")
-    print(f"  VC DataRoom: {len(vc_groups)} groups")
-
-    # Merge groups by name
-    merged_groups = {}
-    for g in dbamp_groups + vc_groups:
-        name = g["name"]
-        if name not in merged_groups:
-            merged_groups[name] = g
-
-    print(f"  Merged to {len(merged_groups)} unique groups")
+    print("Reading feature permissions...")
+    source_perms = read_feature_permissions(SOURCE_DB)
+    print(f"  Found {len(source_perms)} permissions")
 
     if DRY_RUN:
         print("\n** DRY RUN complete. Run without --dry-run to execute. **")
@@ -142,35 +116,36 @@ def migrate():
     cursor = conn.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
 
+    # Get app IDs from seed data
+    cursor.execute("SELECT id, slug FROM apps")
+    app_ids = {row["slug"]: row["id"] for row in cursor.fetchall()}
+
     # Insert groups
     print("\nInserting groups...")
-    group_id_map = {}  # old_name -> new_id
-    for name, g in merged_groups.items():
-        cursor.execute("SELECT id FROM groups WHERE name = ?", (name,))
+    group_id_map = {}  # old_id -> new_id
+    for g in source_groups:
+        cursor.execute("SELECT id FROM groups WHERE name = ?", (g["name"],))
         existing = cursor.fetchone()
         if existing:
-            group_id_map[name] = existing["id"]
-            print(f"  Group '{name}' already exists (id={existing['id']})")
+            group_id_map[g["id"]] = existing["id"]
+            print(f"  Group '{g['name']}' already exists (id={existing['id']})")
         else:
             cursor.execute("""
                 INSERT INTO groups (name, description, icon)
                 VALUES (?, ?, ?)
-            """, (name, g.get("description"), g.get("icon", "GRP")))
-            group_id_map[name] = cursor.lastrowid
-            print(f"  Created group '{name}' (id={cursor.lastrowid})")
-
-    # Get app IDs
-    cursor.execute("SELECT id, slug FROM apps")
-    app_ids = {row["slug"]: row["id"] for row in cursor.fetchall()}
+            """, (g["name"], g.get("description"), g.get("icon", "GRP")))
+            group_id_map[g["id"]] = cursor.lastrowid
+            print(f"  Created group '{g['name']}' (id={cursor.lastrowid})")
 
     # Insert users
     print("\nInserting users...")
-    user_id_map = {}  # old_email -> new_id
-    for email, user in merged.items():
+    user_id_map = {}  # old_id -> new_id
+    for user in source_users:
+        email = user["email"].lower().strip()
         cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
         existing = cursor.fetchone()
         if existing:
-            user_id_map[email] = existing["id"]
+            user_id_map[user["id"]] = existing["id"]
             print(f"  User '{email}' already exists (id={existing['id']})")
             continue
 
@@ -187,101 +162,45 @@ def migrate():
             user.get("created_at"),
             user.get("last_login"),
         ))
-        user_id_map[email] = cursor.lastrowid
+        user_id_map[user["id"]] = cursor.lastrowid
         print(f"  Created user '{email}' (id={cursor.lastrowid})")
 
-    # Create app access entries
-    print("\nCreating app access entries...")
-    for email, app_slugs in source_map.items():
-        user_id = user_id_map.get(email)
-        if not user_id:
-            continue
-        for slug in app_slugs:
-            app_id = app_ids.get(slug)
-            if not app_id:
-                continue
-            cursor.execute("""
-                INSERT OR IGNORE INTO user_app_access (user_id, app_id, has_access)
-                VALUES (?, ?, 1)
-            """, (user_id, app_id))
-            print(f"  {email} -> {slug}")
+    # No auto-granted app access — admin assigns per-user/group via admin console
 
     # Migrate user-group memberships
     print("\nMigrating group memberships...")
-    # Build email->old_user_id maps for each source
-    dbamp_id_to_email = {u["id"]: u["email"].lower().strip() for u in dbamp_users}
-    vc_id_to_email = {u["id"]: u["email"].lower().strip() for u in vc_users}
-    # Build old group_id -> group_name maps
-    dbamp_gid_to_name = {g["id"]: g["name"] for g in dbamp_groups}
-    vc_gid_to_name = {g["id"]: g["name"] for g in vc_groups}
+    for m in source_memberships:
+        new_user_id = user_id_map.get(m["user_id"])
+        new_group_id = group_id_map.get(m["group_id"])
+        if new_user_id and new_group_id:
+            cursor.execute("INSERT OR IGNORE INTO user_groups (user_id, group_id) VALUES (?, ?)",
+                           (new_user_id, new_group_id))
+    print(f"  Migrated {len(source_memberships)} memberships")
 
-    for membership in read_user_groups(DBAMP_DB):
-        email = dbamp_id_to_email.get(membership["user_id"])
-        group_name = dbamp_gid_to_name.get(membership["group_id"])
-        if email and group_name:
-            user_id = user_id_map.get(email)
-            new_group_id = group_id_map.get(group_name)
-            if user_id and new_group_id:
-                cursor.execute("INSERT OR IGNORE INTO user_groups (user_id, group_id) VALUES (?, ?)",
-                               (user_id, new_group_id))
-
-    for membership in read_user_groups(VC_DB):
-        email = vc_id_to_email.get(membership["user_id"])
-        group_name = vc_gid_to_name.get(membership["group_id"])
-        if email and group_name:
-            user_id = user_id_map.get(email)
-            new_group_id = group_id_map.get(group_name)
-            if user_id and new_group_id:
-                cursor.execute("INSERT OR IGNORE INTO user_groups (user_id, group_id) VALUES (?, ?)",
-                               (user_id, new_group_id))
-
-    print("  Done")
-
-    # Migrate feature permissions (scoped to correct app)
+    # Migrate feature permissions — scoped to dbamp (source app)
     print("\nMigrating feature permissions...")
-    for perm in read_feature_permissions(DBAMP_DB):
-        group_name = dbamp_gid_to_name.get(perm["group_id"])
-        if not group_name:
-            continue
-        new_group_id = group_id_map.get(group_name)
-        if not new_group_id:
-            continue
-        dbamp_app_id = app_ids.get("dbamp")
-        if not dbamp_app_id:
-            continue
-        cursor.execute("""
-            INSERT OR REPLACE INTO feature_permissions (group_id, app_id, feature_name, can_read, can_write, can_delete, can_execute)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (new_group_id, dbamp_app_id, perm["feature_name"],
-              perm.get("can_read", 0), perm.get("can_write", 0),
-              perm.get("can_delete", 0), perm.get("can_execute", 0)))
-
-    for perm in read_feature_permissions(VC_DB):
-        group_name = vc_gid_to_name.get(perm["group_id"])
-        if not group_name:
-            continue
-        new_group_id = group_id_map.get(group_name)
-        if not new_group_id:
-            continue
-        vc_app_id = app_ids.get("vc_dataroom")
-        if not vc_app_id:
-            continue
-        cursor.execute("""
-            INSERT OR REPLACE INTO feature_permissions (group_id, app_id, feature_name, can_read, can_write, can_delete, can_execute)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (new_group_id, vc_app_id, perm["feature_name"],
-              perm.get("can_read", 0), perm.get("can_write", 0),
-              perm.get("can_delete", 0), perm.get("can_execute", 0)))
-
-    print("  Done")
+    dbamp_app_id = app_ids.get("dbamp")
+    if dbamp_app_id:
+        for perm in source_perms:
+            new_group_id = group_id_map.get(perm["group_id"])
+            if not new_group_id:
+                continue
+            cursor.execute("""
+                INSERT OR REPLACE INTO feature_permissions (group_id, app_id, feature_name, can_read, can_write, can_delete, can_execute)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (new_group_id, dbamp_app_id, perm["feature_name"],
+                  perm.get("can_read", 0), perm.get("can_write", 0),
+                  perm.get("can_delete", 0), perm.get("can_execute", 0)))
+    print(f"  Migrated {len(source_perms)} permissions (scoped to dbamp)")
 
     conn.commit()
     conn.close()
 
     print("\n" + "=" * 60)
     print("Migration complete!")
-    print(f"  Users: {len(merged)}")
-    print(f"  Groups: {len(merged_groups)}")
+    print(f"  Users: {len(source_users)}")
+    print(f"  Groups: {len(source_groups)}")
+    print(f"  App access: assign via admin console")
     print(f"  Database: {AUTH_DB}")
     print("=" * 60)
 

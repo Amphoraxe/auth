@@ -37,7 +37,15 @@
         <string>https://auth.amphoraxe.ca</string>
         <key>AUTH_DEMO_URL</key>
         <string>https://demo.amphoraxe.ca</string>
+        <key>AUTH_SECRET_KEY</key>
+        <string>O1JL8Ur_z7Lfz-2aV8_iR8sXcLDNs-rpJXeSvnSMhUI</string>
+        <key>AUTH_INITIAL_ADMIN_EMAIL</key>
+        <string>luke@amphoraxe.ca</string>
+        <key>AUTH_INITIAL_ADMIN_PASSWORD</key>
+        <string>CHANGE_ME_ON_FIRST_LOGIN</string>
     </dict>
+    <key>UserName</key>
+    <string>amphoraxe</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
