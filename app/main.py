@@ -113,12 +113,14 @@ async def health_check():
 
 
 @app.get("/api/v1/health-proxy")
-async def health_proxy(port: int = Query(...), user: dict = Depends(require_admin)):
+async def health_proxy(port: int = Query(...), path: str = Query("/health"), user: dict = Depends(require_admin)):
     """Proxy health checks to local services (admin only)."""
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.get(f"http://localhost:{port}/health", timeout=3.0)
-            return JSONResponse(content=resp.json(), status_code=resp.status_code)
+            resp = await client.get(f"http://localhost:{port}{path}", timeout=3.0)
+            if resp.status_code < 400:
+                return JSONResponse(content={"status": "healthy"}, status_code=200)
+            return JSONResponse(content={"status": "down"}, status_code=resp.status_code)
     except Exception:
         return JSONResponse(content={"status": "unreachable"}, status_code=503)
 

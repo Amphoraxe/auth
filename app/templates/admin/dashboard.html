@@ -76,7 +76,7 @@ async function loadDashboard() {
 // All services across the ecosystem
 const SERVICES = [
     { group: 'Auth', name: 'Auth API', port: 8300 },
-    { group: 'Website', name: 'amphoraxe.ca', port: 8880 },
+    { group: 'Website', name: 'amphoraxe.ca', port: 8880, path: '/' },
     { group: 'AMP LLM', name: 'Webapp', port: 8000 },
     { group: 'AMP LLM', name: 'Chat API', port: 8001 },
     { group: 'AMP LLM', name: 'NCT Lookup', port: 8002 },
@@ -84,7 +84,7 @@ const SERVICES = [
     { group: 'AMP LLM', name: 'Assistant', port: 8004 },
     { group: 'VC DataRoom', name: 'Webapp', port: 8100 },
     { group: 'dbAMP', name: 'Webapp', port: 8200 },
-    { group: 'Analytics', name: 'Umami', port: 3000 },
+    { group: 'Analytics', name: 'Umami', port: 3000, path: '/api/heartbeat' },
 ];
 
 async function checkHealth() {
@@ -111,7 +111,9 @@ async function checkHealth() {
 
             (async () => {
                 try {
-                    const res = await fetch(`/api/v1/health-proxy?port=${svc.port}`, {credentials: 'include'});
+                    const params = new URLSearchParams({port: svc.port});
+                    if (svc.path) params.set('path', svc.path);
+                    const res = await fetch(`/api/v1/health-proxy?${params}`, {credentials: 'include'});
                     const icon = div.querySelector('.health-icon');
                     icon.classList.remove('health-checking');
                     icon.classList.add(res.ok ? 'health-up' : 'health-down');
