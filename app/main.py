@@ -7,7 +7,8 @@ from pathlib import Path
 from datetime import datetime
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Depends
+import httpx
+from fastapi import FastAPI, Request, Depends, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -109,6 +110,17 @@ async def health_check():
         "timestamp": datetime.utcnow().isoformat(),
         "version": "1.0.0",
     }
+
+
+@app.get("/api/v1/health-proxy")
+async def health_proxy(port: int = Query(...), user: dict = Depends(require_admin)):
+    """Proxy health checks to local services (admin only)."""
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(f"http://localhost:{port}/health", timeout=3.0)
+            return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    except Exception:
+        return JSONResponse(content={"status": "unreachable"}, status_code=503)
 
 
 # =============================================================================
