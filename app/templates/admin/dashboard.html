@@ -35,6 +35,13 @@
 </div>
 
 <div class="card">
+    <h3>AMP LLM Runner</h3>
+    <div id="runnerInfo" class="runner-info">
+        <div class="runner-loading">Loading runner status...</div>
+    </div>
+</div>
+
+<div class="card">
     <h3>Recent Activity</h3>
     <table class="data-table" id="activityTable">
         <thead>
@@ -128,7 +135,56 @@ async function checkHealth() {
     }
 }
 
+async function loadRunnerInfo() {
+    const el = document.getElementById('runnerInfo');
+    try {
+        const [healthRes, csvRes] = await Promise.all([
+            fetch('/api/v1/health-proxy?port=8003&path=/health', {credentials: 'include'}),
+            fetch('/api/v1/health-proxy?port=8003&path=/csv-files', {credentials: 'include'}),
+        ]);
+
+        if (!healthRes.ok) {
+            el.innerHTML = '<div class="runner-offline">Runner service offline</div>';
+            return;
+        }
+
+        const health = await healthRes.json();
+        const csvData = csvRes.ok ? await csvRes.json() : {total_files: 0, files: []};
+
+        const nct = health.nct_service || {};
+        const llm = health.llm_assistant || {};
+        const ollama = (llm.features || {}).ollama || {};
+        const storage = health.storage || {};
+
+        let html = '<div class="runner-stats">';
+        html += `<div class="runner-stat"><span class="runner-stat-value">${storage.files_count || 0}</span><span class="runner-stat-label">NCT Data Files</span></div>`;
+        html += `<div class="runner-stat"><span class="runner-stat-value">${csvData.total_files || 0}</span><span class="runner-stat-label">CSV Exports</span></div>`;
+        html += `<div class="runner-stat"><span class="runner-stat-value">${ollama.models_count || '?'}</span><span class="runner-stat-label">Ollama Models</span></div>`;
+        html += '</div>';
+
+        html += '<div class="runner-deps">';
+        html += `<div class="runner-dep"><span class="health-icon ${nct.connected ? 'health-up' : 'health-down'}"></span>NCT Service <span class="health-port">${nct.url || ':8002'}</span></div>`;
+        html += `<div class="runner-dep"><span class="health-icon ${llm.connected ? 'health-up' : 'health-down'}"></span>LLM Assistant <span class="health-port">${llm.url || ':8004'}</span></div>`;
+        html += `<div class="runner-dep"><span class="health-icon ${ollama.connected ? 'health-up' : 'health-down'}"></span>Ollama <span class="health-port">${ollama.url || ':11434'}</span></div>`;
+        html += '</div>';
+
+        if (csvData.files && csvData.files.length > 0) {
+            html += '<div class="runner-csv-list"><div class="runner-csv-title">Recent CSV Exports</div>';
+            for (const f of csvData.files.slice(0, 5)) {
+                const date = new Date(f.created).toLocaleString();
+                html += `<div class="runner-csv-item"><span>${f.filename}</span><span class="health-port">${f.size_kb.toFixed(1)} KB &middot; ${date}</span></div>`;
+            }
+            html += '</div>';
+        }
+
+        el.innerHTML = html;
+    } catch {
+        el.innerHTML = '<div class="runner-offline">Could not reach runner service</div>';
+    }
+}
+
 loadDashboard();
 checkHealth();
+loadRunnerInfo();
 </script>
 {% endblock %}

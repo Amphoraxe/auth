@@ -119,7 +119,10 @@ async def health_proxy(port: int = Query(...), path: str = Query("/health"), use
         async with httpx.AsyncClient() as client:
             resp = await client.get(f"http://localhost:{port}{path}", timeout=3.0)
             if resp.status_code < 400:
-                return JSONResponse(content={"status": "healthy"}, status_code=200)
+                try:
+                    return JSONResponse(content=resp.json(), status_code=200)
+                except Exception:
+                    return JSONResponse(content={"status": "healthy"}, status_code=200)
             return JSONResponse(content={"status": "down"}, status_code=resp.status_code)
     except Exception:
         return JSONResponse(content={"status": "unreachable"}, status_code=503)
