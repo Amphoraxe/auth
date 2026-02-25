@@ -138,9 +138,10 @@ async function checkHealth() {
 async function loadRunnerInfo() {
     const el = document.getElementById('runnerInfo');
     try {
-        const [healthRes, csvRes] = await Promise.all([
+        const [healthRes, csvRes, jobsRes] = await Promise.all([
             fetch('/api/v1/health-proxy?port=8003&path=/health', {credentials: 'include'}),
             fetch('/api/v1/health-proxy?port=8003&path=/csv-files', {credentials: 'include'}),
+            fetch('/api/v1/health-proxy?port=8000&path=/api/chat/jobs', {credentials: 'include'}),
         ]);
 
         if (!healthRes.ok) {
@@ -150,6 +151,7 @@ async function loadRunnerInfo() {
 
         const health = await healthRes.json();
         const csvData = csvRes.ok ? await csvRes.json() : {total_files: 0, files: []};
+        const jobsData = jobsRes.ok ? await jobsRes.json() : {jobs: [], total: 0, active: 0};
 
         const nct = health.nct_service || {};
         const llm = health.llm_assistant || {};
@@ -160,6 +162,7 @@ async function loadRunnerInfo() {
         html += `<div class="runner-stat"><span class="runner-stat-value">${storage.files_count || 0}</span><span class="runner-stat-label">NCT Data Files</span></div>`;
         html += `<div class="runner-stat"><span class="runner-stat-value">${csvData.total_files || 0}</span><span class="runner-stat-label">CSV Exports</span></div>`;
         html += `<div class="runner-stat"><span class="runner-stat-value">${ollama.models_count || '?'}</span><span class="runner-stat-label">Ollama Models</span></div>`;
+        html += `<div class="runner-stat"><span class="runner-stat-value ${jobsData.active > 0 ? 'stat-active' : ''}">${jobsData.active || 0}</span><span class="runner-stat-label">Active Jobs</span></div>`;
         html += '</div>';
 
         html += '<div class="runner-deps">';
@@ -167,6 +170,33 @@ async function loadRunnerInfo() {
         html += `<div class="runner-dep"><span class="health-icon ${llm.connected ? 'health-up' : 'health-down'}"></span>LLM Assistant <span class="health-port">${llm.url || ':8004'}</span></div>`;
         html += `<div class="runner-dep"><span class="health-icon ${ollama.connected ? 'health-up' : 'health-down'}"></span>Ollama <span class="health-port">${ollama.url || ':11434'}</span></div>`;
         html += '</div>';
+
+        // Jobs list
+        if (jobsData.jobs && jobsData.jobs.length > 0) {
+            html += '<div class="runner-jobs"><div class="runner-csv-title">Jobs</div>';
+            for (const job of jobsData.jobs) {
+                const elapsed = job.elapsed_seconds;
+                const mins = Math.floor(elapsed / 60);
+                const secs = elapsed % 60;
+                const time = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+                const statusCls = job.status === 'processing' ? 'job-active' :
+                                  job.status === 'completed' ? 'job-done' :
+                                  job.status === 'failed' ? 'job-failed' : 'job-pending';
+                html += `<div class="runner-job">`;
+                html += `<div class="runner-job-header"><span class="job-status ${statusCls}">${job.status}</span>`;
+                html += `<span class="job-file">${job.original_filename || 'unnamed'}</span>`;
+                html += `<span class="job-branch">${job.branch || 'main'}</span></div>`;
+                html += `<div class="runner-job-detail">`;
+                html += `<span>${job.progress || ''}</span>`;
+                html += `<span class="health-port">${job.model} &middot; ${time}</span>`;
+                html += `</div>`;
+                if (job.status === 'processing' && job.total_trials > 0) {
+                    html += `<div class="job-progress-bar"><div class="job-progress-fill" style="width:${job.percent_complete}%"></div></div>`;
+                }
+                html += `</div>`;
+            }
+            html += '</div>';
+        }
 
         if (csvData.files && csvData.files.length > 0) {
             html += '<div class="runner-csv-list"><div class="runner-csv-title">Recent CSV Exports</div>';
@@ -182,6 +212,9 @@ async function loadRunnerInfo() {
         el.innerHTML = '<div class="runner-offline">Could not reach runner service</div>';
     }
 }
+
+// Auto-refresh runner info every 10s
+setInterval(loadRunnerInfo, 10000);
 
 loadDashboard();
 checkHealth();
