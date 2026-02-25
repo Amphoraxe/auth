@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% block title %}Groups - Amphoraxe Auth{% endblock %}
+
+{% block content %}
+<div class="page-title">
+    <h2>Groups</h2>
+    <button class="btn btn-primary" onclick="showCreateModal()">Create Group</button>
+</div>
+
+<div class="card-grid" id="groupsGrid"></div>
+
+<!-- Create Group Modal -->
+<div class="modal-backdrop" id="createModal" style="display:none;" onclick="if(event.target===this)hideModal('createModal')">
+    <div class="modal">
+        <h3>Create Group</h3>
+        <form onsubmit="return createGroup(event)">
+            <div class="form-group"><label>Name</label><input type="text" id="newName" required></div>
+            <div class="form-group"><label>Description</label><input type="text" id="newDesc"></div>
+            <div class="form-group"><label>Icon (3 chars)</label><input type="text" id="newIcon" value="GRP" maxlength="3"></div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="hideModal('createModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Group Modal -->
+<div class="modal-backdrop" id="editModal" style="display:none;" onclick="if(event.target===this)hideModal('editModal')">
+    <div class="modal modal-wide">
+        <h3 id="editTitle">Edit Group</h3>
+        <form onsubmit="return updateGroup(event)">
+            <input type="hidden" id="editId">
+            <div class="form-row-3">
+                <div class="form-group"><label>Name</label><input type="text" id="editName" required></div>
+                <div class="form-group"><label>Description</label><input type="text" id="editDesc"></div>
+                <div class="form-group"><label>Icon</label><input type="text" id="editIcon" maxlength="3"></div>
+            </div>
+
+            <h4>Members</h4>
+            <div id="editMembers" class="member-list"></div>
+
+            <h4>App Access</h4>
+            <div id="editAppAccess" class="checkbox-grid"></div>
+
+            <h4>Feature Permissions</h4>
+            <div id="editPermissions" class="permissions-table-wrap"></div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-danger" onclick="deleteGroup()">Delete</button>
+                <button type="button" class="btn btn-secondary" onclick="hideModal('editModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let allApps = [];
+
+async function loadApps() {
+    const data = await apiFetch('/apps');
+    if (data) allApps = data.apps;
+}
+
+async function loadGroups() {
+    const data = await apiFetch('/groups');
+    if (!data) return;
+
+    const grid = document.getElementById('groupsGrid');
+    grid.innerHTML = '';
+
+    for (const g of data.groups) {
+        const div = document.createElement('div');
+        div.className = 'group-card';
+        div.innerHTML = `
+            <div class="group-icon">${g.icon || 'GRP'}</div>
+            <div class="group-info">
+                <strong>${g.name}</strong>
+                <span>${g.description || ''}</span>
+                <span class="member-count">${g.member_count} member${g.member_count !== 1 ? 's' : ''}</span>
+            </div>
+            <button class="btn btn-small" onclick="editGroup(${g.id})">Edit</button>`;
+        grid.appendChild(div);
+    }
+}
+
+function showCreateModal() {
+    document.getElementById('newName').value = '';
+    document.getElementById('newDesc').value = '';
+    document.getElementById('newIcon').value = 'GRP';
+    document.getElementById('createModal').style.display = 'flex';
+}
+
+function hideModal(id) { document.getElementById(id).style.display = 'none'; }
+
+async function createGroup(e) {
+    e.preventDefault();
+    const res = await apiFetch('/groups', {
+        method: 'POST',
+        body: JSON.stringify({
+            name: document.getElementById('newName').value,
+            description: document.getElementById('newDesc').value || null,
+            icon: document.getElementById('newIcon').value || 'GRP',
+        }),
+    });
+    if (res && res.ok) { hideModal('createModal'); loadGroups(); }
+}
+
+async function editGroup(groupId) {
+    const group = await apiFetch(`/groups/${groupId}`);
+    if (!group) return;
+
+    document.getElementById('editId').value = group.id;
+    document.getElementById('editTitle').textContent = `Edit: ${group.name}`;
+    document.getElementById('editName').value = group.name;
+    document.getElementById('editDesc').value = group.description || '';
+    document.getElementById('editIcon').value = group.icon || 'GRP';
+
+    // Members list
+    const membersDiv = document.getElementById('editMembers');
+    membersDiv.innerHTML = group.members.length
+        ? group.members.map(m => `<span class="member-tag">${m.name} (${m.email})</span>`).join('')
+        : '<em>No members</em>';
+
+    // App access checkboxes
+    const accessDiv = document.getElementById('editAppAccess');
+    accessDiv.innerHTML = '';
+    const groupAppSlugs = group.app_access.filter(a => a.has_access).map(a => a.slug);
+    for (const app of allApps) {
+        const label = document.createElement('label');
+        label.className = 'checkbox-label';
+        label.innerHTML = `<input type="checkbox" data-app-id="${app.id}" ${groupAppSlugs.includes(app.slug) ? 'checked' : ''}> ${app.name}`;
+        accessDiv.appendChild(label);
+    }
+
+    // Feature permissions table
+    const permsDiv = document.getElementById('editPermissions');
+    const perms = group.feature_permissions;
+    // Build a simple permissions editor per app
+    let html = '<table class="data-table"><thead><tr><th>App</th><th>Feature</th><th>Read</th><th>Write</th><th>Delete</th><th>Execute</th></tr></thead><tbody>';
+    for (const p of perms) {
+        html += `<tr>
+            <td>${p.app_name}</td>
+            <td>${p.feature_name}</td>
+            <td><input type="checkbox" ${p.can_read ? 'checked' : ''} data-perm="${p.app_slug}:${p.feature_name}:read"></td>
+            <td><input type="checkbox" ${p.can_write ? 'checked' : ''} data-perm="${p.app_slug}:${p.feature_name}:write"></td>
+            <td><input type="checkbox" ${p.can_delete ? 'checked' : ''} data-perm="${p.app_slug}:${p.feature_name}:delete"></td>
+            <td><input type="checkbox" ${p.can_execute ? 'checked' : ''} data-perm="${p.app_slug}:${p.feature_name}:execute"></td>
+        </tr>`;
+    }
+    html += '</tbody></table>';
+    if (perms.length === 0) html = '<em>No feature permissions configured. Use the settings page to add features.</em>';
+    permsDiv.innerHTML = html;
+
+    document.getElementById('editModal').style.display = 'flex';
+}
+
+async function updateGroup(e) {
+    e.preventDefault();
+    const groupId = document.getElementById('editId').value;
+
+    // Update group details
+    await apiFetch(`/groups/${groupId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+            name: document.getElementById('editName').value,
+            description: document.getElementById('editDesc').value || null,
+            icon: document.getElementById('editIcon').value || 'GRP',
+        }),
+    });
+
+    // Update app access
+    const appCheckboxes = document.querySelectorAll('#editAppAccess input[type=checkbox]');
+    for (const cb of appCheckboxes) {
+        await apiFetch(`/groups/${groupId}/apps`, {
+            method: 'POST',
+            body: JSON.stringify({app_id: parseInt(cb.dataset.appId), has_access: cb.checked}),
+        });
+    }
+
+    // Update feature permissions
+    const permCheckboxes = document.querySelectorAll('[data-perm]');
+    const permMap = {};
+    for (const cb of permCheckboxes) {
+        const [appSlug, feature, action] = cb.dataset.perm.split(':');
+        const key = `${appSlug}:${feature}`;
+        if (!permMap[key]) permMap[key] = {appSlug, feature, read: false, write: false, delete: false, execute: false};
+        permMap[key][action] = cb.checked;
+    }
+    for (const p of Object.values(permMap)) {
+        const app = allApps.find(a => a.slug === p.appSlug);
+        if (!app) continue;
+        await apiFetch(`/groups/${groupId}/permissions`, {
+            method: 'PUT',
+            body: JSON.stringify({
+                app_id: app.id,
+                feature_name: p.feature,
+                can_read: p.read,
+                can_write: p.write,
+                can_delete: p.delete,
+                can_execute: p.execute,
+            }),
+        });
+    }
+
+    hideModal('editModal');
+    loadGroups();
+}
+
+async function deleteGroup() {
+    const groupId = document.getElementById('editId').value;
+    if (!confirm('Delete this group? Members will lose group-based access.')) return;
+    await apiFetch(`/groups/${groupId}`, {method: 'DELETE'});
+    hideModal('editModal');
+    loadGroups();
+}
+
+loadApps().then(loadGroups);
+</script>
+{% endblock %}

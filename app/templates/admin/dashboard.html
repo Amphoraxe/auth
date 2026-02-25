@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Amphoraxe Auth{% endblock %}
+
+{% block content %}
+<div class="page-title">
+    <h2>Dashboard</h2>
+</div>
+
+<div class="stats-grid" id="statsGrid">
+    <div class="stat-card">
+        <div class="stat-value" id="statSessions">--</div>
+        <div class="stat-label">Active Sessions</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="statUsers">--</div>
+        <div class="stat-label">Total Users</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="statPending">--</div>
+        <div class="stat-label">Pending Approvals</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="statLogins">--</div>
+        <div class="stat-label">Logins (24h)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="statApps">--</div>
+        <div class="stat-label">Active Apps</div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Service Health</h3>
+    <div class="health-grid" id="healthGrid"></div>
+</div>
+
+<div class="card">
+    <h3>Recent Activity</h3>
+    <table class="data-table" id="activityTable">
+        <thead>
+            <tr><th>Time</th><th>User</th><th>Action</th><th>App</th><th>Details</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function loadDashboard() {
+    const data = await apiFetch('/audit/stats');
+    if (!data) return;
+
+    document.getElementById('statSessions').textContent = data.active_sessions;
+    document.getElementById('statUsers').textContent = data.total_users;
+    document.getElementById('statPending').textContent = data.pending_approvals;
+    document.getElementById('statLogins').textContent = data.logins_24h;
+    document.getElementById('statApps').textContent = data.active_apps;
+
+    // Pending badge
+    if (data.pending_approvals > 0) {
+        document.getElementById('statPending').classList.add('stat-warning');
+    }
+
+    // Recent activity
+    const tbody = document.querySelector('#activityTable tbody');
+    tbody.innerHTML = '';
+    for (const entry of data.recent_activity) {
+        const tr = document.createElement('tr');
+        const time = new Date(entry.created_at + 'Z').toLocaleString();
+        tr.innerHTML = `<td>${time}</td><td>${entry.user_email || '-'}</td><td><code>${entry.action}</code></td><td>${entry.app_slug || '-'}</td><td class="details-cell">${entry.details || '-'}</td>`;
+        tbody.appendChild(tr);
+    }
+}
+
+async function checkHealth() {
+    const apps = await apiFetch('/apps');
+    if (!apps) return;
+
+    const grid = document.getElementById('healthGrid');
+    grid.innerHTML = '';
+
+    for (const app of apps.apps) {
+        if (!app.main_port || !app.is_active) continue;
+        const div = document.createElement('div');
+        div.className = 'health-item';
+        div.innerHTML = `<span class="health-icon health-checking"></span><span class="health-name">${app.name}</span><span class="health-port">:${app.main_port}</span>`;
+        grid.appendChild(div);
+
+        // Ping health endpoint
+        try {
+            const res = await fetch(`/api/v1/health-proxy?port=${app.main_port}`, {credentials: 'include'});
+            const icon = div.querySelector('.health-icon');
+            if (res.ok) {
+                icon.classList.remove('health-checking');
+                icon.classList.add('health-up');
+            } else {
+                icon.classList.remove('health-checking');
+                icon.classList.add('health-down');
+            }
+        } catch {
+            const icon = div.querySelector('.health-icon');
+            icon.classList.remove('health-checking');
+            icon.classList.add('health-down');
+        }
+    }
+}
+
+loadDashboard();
+checkHealth();
+</script>
+{% endblock %}

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Amphoraxe Auth{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/auth.css">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    {% if user %}
+    <header class="app-header">
+        <div class="header-left">
+            <h1 class="header-title"><a href="/admin/">Amphoraxe Auth</a></h1>
+        </div>
+        <nav class="header-nav">
+            <a href="/admin/" class="nav-link {% if page == 'dashboard' %}active{% endif %}">Dashboard</a>
+            <a href="/admin/users" class="nav-link {% if page == 'users' %}active{% endif %}">Users</a>
+            <a href="/admin/groups" class="nav-link {% if page == 'groups' %}active{% endif %}">Groups</a>
+            <a href="/admin/access" class="nav-link {% if page == 'access' %}active{% endif %}">App Access</a>
+            <a href="/admin/audit" class="nav-link {% if page == 'audit' %}active{% endif %}">Audit Log</a>
+            <a href="/admin/settings" class="nav-link {% if page == 'settings' %}active{% endif %}">Settings</a>
+        </nav>
+        <div class="header-right">
+            <span class="user-name">{{ user.name }}</span>
+            <button class="btn-logout" onclick="logout()">Logout</button>
+        </div>
+        <button class="menu-btn" onclick="toggleMenu()">
+            <span class="menu-icon-line"></span>
+            <span class="menu-icon-line"></span>
+            <span class="menu-icon-line"></span>
+        </button>
+    </header>
+    <div class="mobile-menu" id="mobileMenu">
+        <a href="/admin/" class="nav-link {% if page == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="/admin/users" class="nav-link {% if page == 'users' %}active{% endif %}">Users</a>
+        <a href="/admin/groups" class="nav-link {% if page == 'groups' %}active{% endif %}">Groups</a>
+        <a href="/admin/access" class="nav-link {% if page == 'access' %}active{% endif %}">App Access</a>
+        <a href="/admin/audit" class="nav-link {% if page == 'audit' %}active{% endif %}">Audit Log</a>
+        <a href="/admin/settings" class="nav-link {% if page == 'settings' %}active{% endif %}">Settings</a>
+        <a href="#" class="nav-link logout" onclick="logout()">Logout</a>
+    </div>
+    {% endif %}
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script>
+    const API = '/api/v1';
+
+    function toggleMenu() {
+        document.getElementById('mobileMenu').classList.toggle('open');
+    }
+
+    async function logout() {
+        await fetch(API + '/auth/logout', {method: 'POST', credentials: 'include'});
+        window.location.href = '/auth/login';
+    }
+
+    async function apiFetch(path, options = {}) {
+        const res = await fetch(API + path, {
+            credentials: 'include',
+            headers: {'Content-Type': 'application/json', ...options.headers},
+            ...options,
+        });
+        if (res.status === 401) {
+            window.location.href = '/auth/login';
+            return null;
+        }
+        return res.json();
+    }
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

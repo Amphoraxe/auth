@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ampauth.webapp</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/amphoraxe/Developer/auth.amphoraxe.ca/venv/bin/python</string>
+        <string>-m</string>
+        <string>uvicorn</string>
+        <string>app.main:app</string>
+        <string>--host</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>8300</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/amphoraxe/Developer/auth.amphoraxe.ca</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/amphoraxe/Developer/auth.amphoraxe.ca/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>AUTH_ENV</key>
+        <string>production</string>
+        <key>AUTH_SMTP_HOST</key>
+        <string>smtp.office365.com</string>
+        <key>AUTH_SMTP_PORT</key>
+        <string>587</string>
+        <key>AUTH_SMTP_USER</key>
+        <string>Luke@amphoraxe.ca</string>
+        <key>AUTH_SMTP_FROM</key>
+        <string>Luke@amphoraxe.ca</string>
+        <key>AUTH_ADMIN_EMAIL</key>
+        <string>Luke@amphoraxe.ca</string>
+        <key>AUTH_BASE_URL</key>
+        <string>https://auth.amphoraxe.ca</string>
+        <key>AUTH_DEMO_URL</key>
+        <string>https://demo.amphoraxe.ca</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/amphoraxe/Developer/auth.amphoraxe.ca/logs/webapp.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/amphoraxe/Developer/auth.amphoraxe.ca/logs/webapp.error.log</string>
+</dict>
+</plist>

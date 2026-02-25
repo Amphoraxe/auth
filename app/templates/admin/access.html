@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}App Access Matrix - Amphoraxe Auth{% endblock %}
+
+{% block content %}
+<div class="page-title">
+    <h2>App Access Matrix</h2>
+</div>
+
+<p class="page-desc">Toggle user and group access to each app. Green = allowed, red = denied, gray = inherits from group.</p>
+
+<div class="tab-filters">
+    <button class="tab-btn active" onclick="showView('users')">By User</button>
+    <button class="tab-btn" onclick="showView('groups')">By Group</button>
+</div>
+
+<div id="matrixContainer"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let apps = [];
+let users = [];
+let groups = [];
+let currentView = 'users';
+
+function showView(view) {
+    currentView = view;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+    renderMatrix();
+}
+
+async function loadData() {
+    const [appsData, usersData, groupsData] = await Promise.all([
+        apiFetch('/apps'),
+        apiFetch('/users?per_page=200'),
+        apiFetch('/groups'),
+    ]);
+    apps = appsData?.apps || [];
+    users = usersData?.users || [];
+    groups = groupsData?.groups || [];
+    renderMatrix();
+}
+
+function renderMatrix() {
+    const container = document.getElementById('matrixContainer');
+    const entities = currentView === 'users' ? users : groups;
+    const nameKey = currentView === 'users' ? 'name' : 'name';
+
+    let html = '<div class="matrix-scroll"><table class="data-table matrix-table"><thead><tr><th>' + (currentView === 'users' ? 'User' : 'Group') + '</th>';
+    for (const app of apps) {
+        html += `<th class="matrix-app">${app.name}</th>`;
+    }
+    html += '</tr></thead><tbody>';
+
+    for (const entity of entities) {
+        html += `<tr><td><strong>${entity[nameKey]}</strong>${currentView === 'users' ? '<br><small>' + entity.email + '</small>' : ''}</td>`;
+        for (const app of apps) {
+            if (currentView === 'users' && entity.is_admin) {
+                html += '<td class="matrix-cell matrix-admin" title="Admin: full access">A</td>';
+            } else {
+                const id = entity.id;
+                html += `<td class="matrix-cell matrix-toggle" data-entity="${id}" data-app="${app.id}" onclick="toggleAccess(this, ${id}, ${app.id})"></td>`;
+            }
+        }
+        html += '</tr>';
+    }
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+
+    // Load current access states
+    loadAccessStates();
+}
+
+async function loadAccessStates() {
+    if (currentView === 'users') {
+        for (const user of users) {
+            if (user.is_admin) continue;
+            const detail = await apiFetch(`/users/${user.id}`);
+            if (!detail) continue;
+            for (const access of (detail.app_access || [])) {
+                const cell = document.querySelector(`[data-entity="${user.id}"][data-app="${apps.find(a => a.slug === access.slug)?.id}"]`);
+                if (cell) {
+                    cell.classList.add(access.has_access ? 'matrix-allowed' : 'matrix-denied');
+                    cell.textContent = access.has_access ? 'Y' : 'N';
+                }
+            }
+        }
+    } else {
+        for (const group of groups) {
+            const detail = await apiFetch(`/groups/${group.id}`);
+            if (!detail) continue;
+            for (const access of (detail.app_access || [])) {
+                const cell = document.querySelector(`[data-entity="${group.id}"][data-app="${access.id}"]`);
+                if (cell) {
+                    cell.classList.add(access.has_access ? 'matrix-allowed' : 'matrix-denied');
+                    cell.textContent = access.has_access ? 'Y' : 'N';
+                }
+            }
+        }
+    }
+}
+
+async function toggleAccess(cell, entityId, appId) {
+    const isAllowed = cell.classList.contains('matrix-allowed');
+    const endpoint = currentView === 'users'
+        ? `/users/${entityId}/apps`
+        : `/groups/${entityId}/apps`;
+
+    await apiFetch(endpoint, {
+        method: 'POST',
+        body: JSON.stringify({app_id: appId, has_access: !isAllowed}),
+    });
+
+    cell.classList.remove('matrix-allowed', 'matrix-denied');
+    cell.classList.add(!isAllowed ? 'matrix-allowed' : 'matrix-denied');
+    cell.textContent = !isAllowed ? 'Y' : 'N';
+}
+
+loadData();
+</script>
+{% endblock %}

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Audit Log - Amphoraxe Auth{% endblock %}
+
+{% block content %}
+<div class="page-title">
+    <h2>Audit Log</h2>
+    <button class="btn btn-secondary" onclick="exportCSV()">Export CSV</button>
+</div>
+
+<div class="filters">
+    <input type="text" class="filter-input" id="filterAction" placeholder="Action..." oninput="debounceLoad()">
+    <input type="text" class="filter-input" id="filterApp" placeholder="App slug..." oninput="debounceLoad()">
+    <input type="date" class="filter-input" id="filterFrom" onchange="loadAudit()">
+    <input type="date" class="filter-input" id="filterTo" onchange="loadAudit()">
+</div>
+
+<table class="data-table" id="auditTable">
+    <thead>
+        <tr>
+            <th>Timestamp</th>
+            <th>User</th>
+            <th>Action</th>
+            <th>App</th>
+            <th>Resource</th>
+            <th>Details</th>
+            <th>IP</th>
+        </tr>
+    </thead>
+    <tbody></tbody>
+</table>
+
+<div class="pagination" id="pagination"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentPage = 1;
+let loadTimeout;
+
+function debounceLoad() {
+    clearTimeout(loadTimeout);
+    loadTimeout = setTimeout(() => { currentPage = 1; loadAudit(); }, 300);
+}
+
+async function loadAudit() {
+    let url = `/audit?page=${currentPage}&per_page=50`;
+    const action = document.getElementById('filterAction').value;
+    const app = document.getElementById('filterApp').value;
+    const from = document.getElementById('filterFrom').value;
+    const to = document.getElementById('filterTo').value;
+    if (action) url += `&action=${encodeURIComponent(action)}`;
+    if (app) url += `&app_slug=${encodeURIComponent(app)}`;
+    if (from) url += `&date_from=${from}`;
+    if (to) url += `&date_to=${to}`;
+
+    const data = await apiFetch(url);
+    if (!data) return;
+
+    const tbody = document.querySelector('#auditTable tbody');
+    tbody.innerHTML = '';
+    for (const e of data.entries) {
+        const tr = document.createElement('tr');
+        const time = new Date(e.created_at + 'Z').toLocaleString();
+        tr.innerHTML = `<td class="nowrap">${time}</td><td>${e.user_email || '-'}</td><td><code>${e.action}</code></td><td>${e.app_slug || '-'}</td><td>${e.resource_type ? e.resource_type + '#' + (e.resource_id || '') : '-'}</td><td class="details-cell">${e.details || '-'}</td><td class="nowrap">${e.ip_address || '-'}</td>`;
+        tbody.appendChild(tr);
+    }
+
+    // Pagination
+    const pag = document.getElementById('pagination');
+    pag.innerHTML = '';
+    if (data.pages > 1) {
+        for (let i = 1; i <= Math.min(data.pages, 20); i++) {
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-small' + (i === currentPage ? ' active' : '');
+            btn.textContent = i;
+            btn.onclick = () => { currentPage = i; loadAudit(); };
+            pag.appendChild(btn);
+        }
+    }
+}
+
+function exportCSV() {
+    const table = document.getElementById('auditTable');
+    const rows = Array.from(table.querySelectorAll('tr'));
+    const csv = rows.map(row => Array.from(row.querySelectorAll('th,td')).map(c => '"' + c.textContent.replace(/"/g, '""') + '"').join(',')).join('\n');
+    const blob = new Blob([csv], {type: 'text/csv'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'audit_log.csv';
+    a.click();
+}
+
+loadAudit();
+</script>
+{% endblock %}

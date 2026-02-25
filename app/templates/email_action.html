@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amphoraxe Auth</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/auth.css">
+</head>
+<body>
+    <main class="container">
+        <div class="auth-card">
+            <h1 class="auth-title">Amphoraxe Auth</h1>
+            {% if success %}
+            <div class="alert alert-success">{{ message }}</div>
+            {% else %}
+            <div class="alert alert-error">{{ message }}</div>
+            {% endif %}
+            <p style="margin-top: 1.5rem; text-align: center;">
+                <a href="/admin/users" class="btn btn-primary">Go to Admin Console</a>
+            </p>
+        </div>
+    </main>
+</body>
+</html>

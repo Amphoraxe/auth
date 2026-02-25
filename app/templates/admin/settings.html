@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Settings - Amphoraxe Auth{% endblock %}
+
+{% block content %}
+<div class="page-title">
+    <h2>Settings</h2>
+</div>
+
+<div class="card">
+    <h3>App Registry</h3>
+    <table class="data-table" id="appsTable">
+        <thead>
+            <tr><th>Slug</th><th>Name</th><th>Main URL</th><th>Port</th><th>Active</th><th>Admin Only</th><th>Actions</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <button class="btn btn-primary" style="margin-top: 1rem;" onclick="showCreateApp()">Add App</button>
+</div>
+
+<!-- Edit App Modal -->
+<div class="modal-backdrop" id="editAppModal" style="display:none;" onclick="if(event.target===this)hideModal('editAppModal')">
+    <div class="modal">
+        <h3 id="editAppTitle">Edit App</h3>
+        <form onsubmit="return saveApp(event)">
+            <input type="hidden" id="appEditId">
+            <div class="form-group"><label>Slug</label><input type="text" id="appSlug" required></div>
+            <div class="form-group"><label>Name</label><input type="text" id="appName" required></div>
+            <div class="form-group"><label>Description</label><input type="text" id="appDesc"></div>
+            <div class="form-group"><label>Main URL</label><input type="text" id="appMainUrl"></div>
+            <div class="form-group"><label>Dev URL</label><input type="text" id="appDevUrl"></div>
+            <div class="form-row">
+                <div class="form-group"><label>Main Port</label><input type="number" id="appMainPort"></div>
+                <div class="form-group"><label>Dev Port</label><input type="number" id="appDevPort"></div>
+            </div>
+            <div class="form-group"><label>Icon (3 chars)</label><input type="text" id="appIcon" maxlength="3"></div>
+            <div class="form-row">
+                <label class="checkbox-label"><input type="checkbox" id="appActive" checked> Active</label>
+                <label class="checkbox-label"><input type="checkbox" id="appAdminOnly"> Admin Only</label>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="hideModal('editAppModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function loadApps() {
+    const data = await apiFetch('/apps');
+    if (!data) return;
+
+    const tbody = document.querySelector('#appsTable tbody');
+    tbody.innerHTML = '';
+    for (const app of data.apps) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><code>${app.slug}</code></td>
+            <td>${app.name}</td>
+            <td>${app.main_url || '-'}</td>
+            <td>${app.main_port || '-'}</td>
+            <td>${app.is_active ? '<span class="badge badge-green">Yes</span>' : '<span class="badge badge-red">No</span>'}</td>
+            <td>${app.admin_only ? '<span class="badge badge-yellow">Yes</span>' : '-'}</td>
+            <td><button class="btn btn-small" onclick='editApp(${JSON.stringify(app)})'>Edit</button></td>`;
+        tbody.appendChild(tr);
+    }
+}
+
+function hideModal(id) { document.getElementById(id).style.display = 'none'; }
+
+function showCreateApp() {
+    document.getElementById('appEditId').value = '';
+    document.getElementById('editAppTitle').textContent = 'Add App';
+    document.getElementById('appSlug').value = '';
+    document.getElementById('appSlug').disabled = false;
+    document.getElementById('appName').value = '';
+    document.getElementById('appDesc').value = '';
+    document.getElementById('appMainUrl').value = '';
+    document.getElementById('appDevUrl').value = '';
+    document.getElementById('appMainPort').value = '';
+    document.getElementById('appDevPort').value = '';
+    document.getElementById('appIcon').value = '';
+    document.getElementById('appActive').checked = true;
+    document.getElementById('appAdminOnly').checked = false;
+    document.getElementById('editAppModal').style.display = 'flex';
+}
+
+function editApp(app) {
+    document.getElementById('appEditId').value = app.id;
+    document.getElementById('editAppTitle').textContent = `Edit: ${app.name}`;
+    document.getElementById('appSlug').value = app.slug;
+    document.getElementById('appSlug').disabled = true;
+    document.getElementById('appName').value = app.name;
+    document.getElementById('appDesc').value = app.description || '';
+    document.getElementById('appMainUrl').value = app.main_url || '';
+    document.getElementById('appDevUrl').value = app.dev_url || '';
+    document.getElementById('appMainPort').value = app.main_port || '';
+    document.getElementById('appDevPort').value = app.dev_port || '';
+    document.getElementById('appIcon').value = app.icon || '';
+    document.getElementById('appActive').checked = !!app.is_active;
+    document.getElementById('appAdminOnly').checked = !!app.admin_only;
+    document.getElementById('editAppModal').style.display = 'flex';
+}
+
+async function saveApp(e) {
+    e.preventDefault();
+    const appId = document.getElementById('appEditId').value;
+    const body = {
+        name: document.getElementById('appName').value,
+        description: document.getElementById('appDesc').value || null,
+        main_url: document.getElementById('appMainUrl').value || null,
+        dev_url: document.getElementById('appDevUrl').value || null,
+        main_port: parseInt(document.getElementById('appMainPort').value) || null,
+        dev_port: parseInt(document.getElementById('appDevPort').value) || null,
+        icon: document.getElementById('appIcon').value || null,
+        is_active: document.getElementById('appActive').checked,
+        admin_only: document.getElementById('appAdminOnly').checked,
+    };
+
+    if (appId) {
+        await apiFetch(`/apps/${appId}`, {method: 'PUT', body: JSON.stringify(body)});
+    } else {
+        body.slug = document.getElementById('appSlug').value;
+        await apiFetch('/apps', {method: 'POST', body: JSON.stringify(body)});
+    }
+
+    hideModal('editAppModal');
+    loadApps();
+}
+
+loadApps();
+</script>
+{% endblock %}
