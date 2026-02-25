@@ -73,36 +73,56 @@ async function loadDashboard() {
     }
 }
 
-async function checkHealth() {
-    const apps = await apiFetch('/apps');
-    if (!apps) return;
+// All services across the ecosystem
+const SERVICES = [
+    { group: 'Auth', name: 'Auth API', port: 8300 },
+    { group: 'Website', name: 'amphoraxe.ca', port: 8880 },
+    { group: 'AMP LLM', name: 'Webapp', port: 8000 },
+    { group: 'AMP LLM', name: 'Chat API', port: 8001 },
+    { group: 'AMP LLM', name: 'NCT Lookup', port: 8002 },
+    { group: 'AMP LLM', name: 'Runner', port: 8003 },
+    { group: 'AMP LLM', name: 'Assistant', port: 8004 },
+    { group: 'VC DataRoom', name: 'Webapp', port: 8100 },
+    { group: 'dbAMP', name: 'Webapp', port: 8200 },
+    { group: 'Analytics', name: 'Umami', port: 3000 },
+];
 
+async function checkHealth() {
     const grid = document.getElementById('healthGrid');
     grid.innerHTML = '';
 
-    for (const app of apps.apps) {
-        if (!app.main_port || !app.is_active) continue;
-        const div = document.createElement('div');
-        div.className = 'health-item';
-        div.innerHTML = `<span class="health-icon health-checking"></span><span class="health-name">${app.name}</span><span class="health-port">:${app.main_port}</span>`;
-        grid.appendChild(div);
+    // Group services
+    const groups = {};
+    for (const svc of SERVICES) {
+        if (!groups[svc.group]) groups[svc.group] = [];
+        groups[svc.group].push(svc);
+    }
 
-        // Ping health endpoint
-        try {
-            const res = await fetch(`/api/v1/health-proxy?port=${app.main_port}`, {credentials: 'include'});
-            const icon = div.querySelector('.health-icon');
-            if (res.ok) {
-                icon.classList.remove('health-checking');
-                icon.classList.add('health-up');
-            } else {
-                icon.classList.remove('health-checking');
-                icon.classList.add('health-down');
-            }
-        } catch {
-            const icon = div.querySelector('.health-icon');
-            icon.classList.remove('health-checking');
-            icon.classList.add('health-down');
+    for (const [groupName, svcs] of Object.entries(groups)) {
+        const groupDiv = document.createElement('div');
+        groupDiv.className = 'health-group';
+        groupDiv.innerHTML = `<div class="health-group-title">${groupName}</div>`;
+
+        for (const svc of svcs) {
+            const div = document.createElement('div');
+            div.className = 'health-item';
+            div.innerHTML = `<span class="health-icon health-checking"></span><span class="health-name">${svc.name}</span><span class="health-port">:${svc.port}</span>`;
+            groupDiv.appendChild(div);
+
+            (async () => {
+                try {
+                    const res = await fetch(`/api/v1/health-proxy?port=${svc.port}`, {credentials: 'include'});
+                    const icon = div.querySelector('.health-icon');
+                    icon.classList.remove('health-checking');
+                    icon.classList.add(res.ok ? 'health-up' : 'health-down');
+                } catch {
+                    const icon = div.querySelector('.health-icon');
+                    icon.classList.remove('health-checking');
+                    icon.classList.add('health-down');
+                }
+            })();
         }
+        grid.appendChild(groupDiv);
     }
 }
 
